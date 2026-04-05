@@ -1,0 +1,11 @@
+# roadpoles_v1 dataset config for YOLO
+# 322 train / 92 val / 46 test images (test labels hidden for leaderboard)
+
+path: /home/liangjizhu/Desktop/4-2Cuatri/DeepLearning/TDT4265_SnowPoleDetection/data/Poles2025/roadpoles_v1
+train: train/images
+val: valid/images
+test: test/images
+
+nc: 1
+names:
+  0: snow_pole

@@ -1,0 +1,11 @@
+# Road_poles_iPhone dataset config for YOLO
+# 942 train / 261 val / 138 test images (test labels hidden for leaderboard)
+
+path: /home/liangjizhu/Desktop/4-2Cuatri/DeepLearning/TDT4265_SnowPoleDetection/data/Poles2025/Road_poles_iPhone
+train: images/Train/train
+val: images/Validation/val
+test: images/Test/test
+
+nc: 1
+names:
+  0: snow_pole
