@@ -14,40 +14,44 @@ All labels are in YOLO format (1 class: `snow_pole`).
 
 ## Results
 
-### Model: YOLOv8n (nano) — 3.0M parameters, 6 MB, 8.1 GFLOPs
+### Approach 1: YOLOv8n (nano) — 3.0M parameters, 6 MB, 8.1 GFLOPs
+
+Baseline model using the smallest YOLOv8 variant, suitable for edge deployment and real-time inference.
 
 #### Road_poles_iPhone Dataset
 
-| Metric | Val (best epoch) | Val (final, epoch 100) |
-|--------|-----------------|----------------------|
-| Precision | 0.949 | 0.948 |
-| Recall | 0.885 | 0.893 |
-| mAP@50 | 0.942 | 0.948 |
-| mAP@50:95 | **0.711** | 0.705 |
+| Metric | Validation | Test (leaderboard) |
+|--------|-----------|-------------------|
+| Precision | 0.949 | — |
+| Recall | 0.885 | — |
+| mAP@50 | 0.942 | **88.14%** |
+| mAP@50:95 | 0.711 | **68.79%** |
+| AR10 | — | 71.79% |
 
-- **Best checkpoint** (epoch 92): mAP@50:95 = 0.711
-- Training time: **594s** (~10 min) on RTX 3070 Ti Laptop
+- Best checkpoint at epoch 92
+- Training time: **594s** (~10 min)
 - Inference speed: **1.7 ms/image** (640x384)
 
 #### roadpoles_v1 Dataset
 
-| Metric | Val (best epoch) | Val (final, epoch 100) |
-|--------|-----------------|----------------------|
-| Precision | 0.866 | 0.842 |
-| Recall | 0.867 | 0.850 |
-| mAP@50 | 0.899 | 0.898 |
-| mAP@50:95 | **0.494** | 0.494 |
+| Metric | Validation | Test (leaderboard) |
+|--------|-----------|-------------------|
+| Precision | 0.866 | — |
+| Recall | 0.867 | — |
+| mAP@50 | 0.899 | **94.94%** |
+| mAP@50:95 | 0.494 | **57.99%** |
+| AR10 | — | 62.76% |
 
-- **Best checkpoint** (epoch 96): mAP@50:95 = 0.494
-- Training time: **235s** (~4 min) on RTX 3070 Ti Laptop
+- Best checkpoint at epoch 96
+- Training time: **235s** (~4 min)
 - Inference speed: **3.1 ms/image** (416x640)
 
-#### Test Set Predictions (for leaderboard)
+#### Leaderboard Submissions
 
-| Dataset | Predictions | Output |
-|---------|-------------|--------|
-| iPhone | 136 / 138 images with detections | `runs/detect/runs/predict/iphone_test/labels/` |
-| v1 | 45 / 46 images with detections | `runs/detect/runs/predict/v1_test/labels/` |
+| Dataset | Leaderboard Score (mAP@50:95) | mAP@50 | AR10 | Submission |
+|---------|-------------------------------|--------|------|------------|
+| Road_poles_iPhone | **68.79%** | 88.14% | 71.79% | `iphone_test_predictions.zip` |
+| roadpoles_v1 | **57.99%** | 94.94% | 62.76% | `v1_test_predictions.zip` |
 
 ### Sustainability
 
@@ -68,7 +72,7 @@ All labels are in YOLO format (1 class: `snow_pole`).
 - [x] YOLOv8n trained on roadpoles_v1 (100 epochs)
 - [x] Evaluation on validation sets
 - [x] Test predictions generated for leaderboard
-- [ ] Leaderboard submission
+- [x] Leaderboard submission (iPhone: 68.79%, v1: 57.99%)
 - [ ] Second model variant (e.g. YOLOv8s, YOLO11n)
 - [ ] Error analysis / failure cases
 - [ ] Video presentation (12–14 min)
