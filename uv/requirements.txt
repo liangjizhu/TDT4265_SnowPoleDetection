@@ -1,0 +1,32 @@
+# RF-DETR Snow Pole Detection — Requirements
+# Python 3.9+
+#
+# Quick install (recommended, uses uv):
+#   uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   uv pip install "rfdetr[train]"
+#   uv pip install -r requirements.txt
+#
+# Or with pip:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   pip install "rfdetr[train]"
+#   pip install -r requirements.txt
+
+# ── Core: RF-DETR (includes supervision, transformers, timm, etc.) ─────────────
+rfdetr[train]>=1.3.0
+
+# ── Deep Learning ──────────────────────────────────────────────────────────────
+# Install PyTorch separately with the CUDA 12.1 index (see above).
+# Listed here for reference only; pip will install CPU-only if no index is given.
+torch>=2.2.0
+torchvision>=0.14.0
+
+# ── Image Processing ───────────────────────────────────────────────────────────
+Pillow>=9.0.0          # PIL — used in yolo_to_coco.py, predict_v1test.py, predict_video.py
+opencv-python>=4.8.0   # cv2  — used in predict_video.py
+numpy>=1.24.0          # array ops in predict_video.py
+
+# ── Detection Post-processing ──────────────────────────────────────────────────
+supervision>=0.18.0    # Detections object returned by rfdetr model.predict()
+
+# ── Training Utilities ─────────────────────────────────────────────────────────
+tensorboard>=2.13.0    # Training curve visualisation (tensorboard --logdir runs)
