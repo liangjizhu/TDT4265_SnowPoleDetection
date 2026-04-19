@@ -320,8 +320,7 @@ Overall **roadpoles_v1** best score is **RF-DETR-B**; the YOLO + WBF rows are th
 - [x] roadpoles_v1: multiscale WBF9 + tuned shrink/skip/WBF IoU — **67.44%** (`v1_wbf9_ms_sw904_sk14_wi52.zip`; prior **67.03%** with `v1_wbf9_ms_sw910_sk13_wi50.zip`)
 - [x] roadpoles_v1: **RF-DETR-B** (second architecture) — **72.64%** leaderboard (`submissions/submission_v1test4_rfdetr.zip`); code and docs in `src/rfdetr/` (`README.md`, `requirements.txt`)
 - [x] YOLOv8n (1280) trained on roadpoles_v1 (200 epochs) — overfit, 51.99%
-- [ ] Error analysis / failure cases
-- [ ] Video presentation (12–14 min)
+- [x] Video presentation (12–14 min)
 
 ## Project Structure
 
