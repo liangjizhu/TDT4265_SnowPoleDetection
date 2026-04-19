@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Large model weights (tracked separately if needed)
+*.pth
+rf-detr-base.pth
+
+# Dataset images and labels (large binary files)
+roadpoles_v1/
+Road_poles_iPhone/
+
+# Video files
+test video/
+
+# Prediction output directories
+uv/predictions/
+uv/predictions_conf005/
+uv/predictions_iphone/
+uv/predictions_v1test/
+uv/predictions_video/
+
+# Training run outputs
+uv/runs/
+uv/runs_iphone/
+uv/best_models_saved/
+uv/best_models_saved-1/
+
+# Misc
+debug.log
+*.pptx
