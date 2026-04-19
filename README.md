@@ -2,6 +2,8 @@
 
 Real-time object detection of snow poles for autonomous driving in winter conditions, using the **Poles2025** dataset from the Trondheim/Trondelag region.
 
+The project uses **two detector architectures**: **Ultralytics YOLO** (main scripts under `src/`, dependencies in `requirements.txt`) and **RF-DETR-B** (scripts under `src/rfdetr/`, dependencies in `src/rfdetr/requirements.txt`). They are separate stacks; install the file that matches the code you run.
+
 ## Dataset Overview
 
 | Subset | Size | Train | Val | Test | Labels | Leaderboard |
@@ -145,11 +147,11 @@ Explored the effect of lowering the confidence threshold and applying Test-Time 
 
 Further gains on **roadpoles_v1** came from **inference-time** steps only (no extra training). The leaderboard metric is **mAP@50:95**; on v1, **mAP@50** was already very high (~97–99%), so the bottleneck was **tight horizontal alignment** of very thin poles (typical normalized width ≈ 0.008).
 
-The pipeline is built in three layers, in the order we applied them:
+The pipeline is built in **four** stages, in the order we applied them:
 
 #### 1. WBF3 — three-model Weighted Boxes Fusion
 
-We fused detections from three checkpoints with **Weighted Boxes Fusion (WBF)** (`ensemble-boxes`), so boxes are merged in normalized coordinates before writing YOLO txt + confidence:
+We fused detections from three checkpoints with **Weighted Boxes Fusion (WBF)** (PyPI package `ensemble-boxes`, import name `ensemble_boxes`), so boxes are merged in normalized coordinates before writing YOLO txt + confidence:
 
 | Model | Role |
 |-------|------|
@@ -163,17 +165,21 @@ Per-model inference: `imgsz=640`, `conf=0.05`, `iou=0.7`. WBF defaults unless no
 
 #### 2. Width shrink (after per-model boxes, before WBF)
 
-On the **validation** split, matched boxes were on average **slightly too wide** relative to ground truth (thin vertical class). Before fusion, each detector box was **horizontally tightened** around its center:
+On the **validation** split, matched boxes were on average **slightly too wide** relative to ground truth (thin vertical class). Before fusion, each detector box is rescaled in **normalized xyxy** (`ensemble_wbf_v1.py`: `build_expert_lists`): horizontal center is fixed, **full** normalized width is scaled by **`shrink_w`** (called $\alpha$ here). With left/right edges $x_\ell, x_r$, center $c_x=\tfrac{1}{2}(x_\ell+x_r)$, and span $w=x_r-x_\ell$,
 
-\[
-w' = \alpha \cdot w,\quad \alpha \in (0,1]
-\]
+$$
+w_{\mathrm{new}}=\alpha\, w,\qquad
+x_\ell^{\mathrm{new}}=c_x-\tfrac{w_{\mathrm{new}}}{2},\qquad
+x_r^{\mathrm{new}}=c_x+\tfrac{w_{\mathrm{new}}}{2}.
+$$
 
-We grid-searched \(\alpha\) on the test submission loop; **\(\alpha \approx 0.914\)** (i.e. shrink to **91.4%** of the predicted width) was one of the strongest settings.
+Typically $0<\alpha\le 1$; reported runs use $\alpha<1$ to narrow the box. Height uses a separate factor **`scale_h`** (default **1.0**).
+
+We grid-searched $\alpha$ on the test submission loop; **$\alpha \approx 0.914$** (i.e. **91.4%** of the predicted width) was one of the strongest settings.
 
 **Example best from this step**
 
-| Submission | Width factor \(\alpha\) | mAP@50:95 | mAP@50 | AR10 |
+| Submission | Width factor $\alpha$ | mAP@50:95 | mAP@50 | AR10 |
 |------------|-------------------------|-----------|--------|------|
 | `v1_wbf3_sw914.zip` | **0.914** | **64.45%** | 98.74 | 69.31% |
 
@@ -181,9 +187,9 @@ We grid-searched \(\alpha\) on the test submission loop; **\(\alpha \approx 0.91
 
 WBF’s `skip_box_thr` drops very low-confidence proposals during fusion. Raising it from **0.10** to **0.12** (`skip12`) reduced spurious merged boxes while keeping the same **0.91** width shrink and `iou_thr=0.5`.
 
-**Best (WBF3 only, single `imgsz` 640)** — superseded on the v1 leaderboard by multiscale WBF9 (§4).
+**Best (WBF3 only, single `imgsz` 640)** — superseded on the v1 leaderboard by multiscale WBF9 (stage 4 below).
 
-| Submission | Shrink \(\alpha\) | WBF `skip_box_thr` | mAP@50:95 | mAP@50 | AR10 |
+| Submission | Shrink $\alpha$ | WBF `skip_box_thr` | mAP@50:95 | mAP@50 | AR10 |
 |------------|-------------------|--------------------|-----------|--------|------|
 | `v1_wbf3_s91_skip12.zip` | **0.91** | **0.12** | **64.58%** | 96.79 | 69.31% |
 
@@ -193,23 +199,29 @@ WBF’s `skip_box_thr` drops very low-confidence proposals during fusion. Raisin
 |-------|------------------|--------|
 | Best single model + conf (`v1` YOLOv8n, conf 0.1) | 59.23% | Baseline in README above |
 | WBF3 only | 60.96% | `v1_wbf_ensemble.zip` |
-| WBF3 + width shrink (tuned \(\alpha\)) | **64.45%** | `v1_wbf3_sw914.zip` — here \(\alpha \approx 0.914\) was best |
+| WBF3 + width shrink (tuned $\alpha$) | **64.45%** | `v1_wbf3_sw914.zip` — here $\alpha \approx 0.914$ was best |
 | WBF3 + shrink 0.91 + `skip_box_thr=0.12` | **64.58%** | `v1_wbf3_s91_skip12.zip` |
 
 #### 4. Multi-scale WBF9 (same 3 YOLOv8 checkpoints, three `imgsz` each)
 
 Each checkpoint is run at **576, 640, and 704** (still YOLOv8, no 1280 test-time), giving **9 experts** for WBF. Expert weights are `model_weight × scale_weight`, with default scale weights `[0.75, 1.0, 0.75]` so **640** is slightly favored. The same **width shrink** and **`skip_box_thr` / `iou_thr`** tuning as above is applied per expert before fusion.
 
-Zip names encode: `sw###` → width scale \(\alpha = \texttt{###}/1000\) (multiply predicted width by \(\alpha\); **smaller \(\alpha\)** = **stronger** shrink). **`sk##`** → WBF `skip_box_thr = ##/100`. **`wi##`** → WBF `iou_thr = ##/100`.
+Multiscale zips use the suffix pattern `…_swNNN_skNN_wiNN…` (built in `ensemble_wbf_v1.py`: `round(shrink_w*1000)`, `round(skip_box*100)`, `round(wbf_iou*100)`). Decode the integer tails as:
+
+| Suffix | Parameter | Formula | Example |
+|--------|-----------|---------|---------|
+| `sw` + 3 digits | width shrink factor α | α = NNN / 1000 | `sw904` → α = 0.904 (smaller α → narrower box before WBF) |
+| `sk` + 2 digits | WBF `skip_box_thr` | NN / 100 | `sk14` → 0.14 |
+| `wi` + 2 digits | WBF fusion `iou_thr` | NN / 100 | `wi52` → 0.52 |
 
 **Leaderboard record (confirmed)**
 
-| Submission | \(\alpha\) | `skip_box_thr` | `iou_thr` | mAP@50:95 | mAP@50 | AR10 |
+| Submission | $\alpha$ | `skip_box_thr` | `iou_thr` | mAP@50:95 | mAP@50 | AR10 |
 |------------|------------|----------------|-----------|-----------|--------|------|
 | `v1_wbf9_ms_sw910_sk13_wi50.zip` | 0.910 | 0.13 | 0.50 | 67.03% | 99.09 | 71.72% |
 | `v1_wbf9_ms_sw904_sk14_wi52.zip` | **0.904** | **0.14** | **0.52** | **67.44%** | **99.16** | — |
 
-**Finding — `sw`, `sk`, and `wi` interact:** With **WBF3 @ 640 only**, the best width scale was **~0.914** (weaker shrink). With **multiscale WBF9**, the leaderboard optimum is **not** the same triple as the first multiscale sweep: **tighter** horizontal shrink (**`sw904`**) plus **higher** `skip_box_thr` (**`sk14`**) and **higher** WBF fusion IoU (**`wi52`**) beat the earlier **`sw910` + `sk13` + `wi50`** row (**67.03% → 67.44%** on test). Joint sweeps over \(\alpha\), `skip_box_thr`, and `iou_thr` matter; do not tune \(\alpha\) alone.
+**Finding — `sw`, `sk`, and `wi` interact:** With **WBF3 @ 640 only**, the best width scale was **~0.914** (weaker shrink). With **multiscale WBF9**, the leaderboard optimum is **not** the same triple as the first multiscale sweep: **tighter** horizontal shrink (**`sw904`**) plus **higher** `skip_box_thr` (**`sk14`**) and **higher** WBF fusion IoU (**`wi52`**) beat the earlier **`sw910` + `sk13` + `wi50`** row (**67.03% → 67.44%** on test). Joint sweeps over $\alpha$, `skip_box_thr`, and `iou_thr` matter; do not tune $\alpha$ alone.
 
 ```bash
 python src/ensemble_wbf_v1.py --mode multiscale-sweep --submissions-dir submissions
@@ -240,9 +252,12 @@ Tested whether higher resolution alone (without a larger model) would help on th
 | Dataset | Best Config | mAP@50:95 | mAP@50 | AR10 |
 |---------|------------|-----------|--------|------|
 | Road_poles_iPhone | YOLOv8s (1280), conf=0.1, no TTA | **79.17%** | 95.69 | 82.07% |
-| roadpoles_v1 | Multiscale WBF9 + `sw904` + `sk14` + `wi52` (`v1_wbf9_ms_sw904_sk14_wi52.zip`) | **67.44%** | 99.16 | — |
+| roadpoles_v1 (overall) | RF-DETR-B (`submissions/submission_v1test4_rfdetr.zip`) | **72.64%** | 99.28 | 76.9% |
+| roadpoles_v1 (YOLO + post-process) | Multiscale WBF9 + `sw904` + `sk14` + `wi52` (`v1_wbf9_ms_sw904_sk14_wi52.zip`) | **67.44%** | 99.16 | — |
 | roadpoles_v1 | WBF3 + shrink 0.91 + `skip_box_thr=0.12` (`v1_wbf3_s91_skip12.zip`) | 64.58% | 96.79 | 69.31% |
-| roadpoles_v1 (single-model best) | YOLOv8n (640), conf=0.1, no TTA | 59.23% | 98.78 | 64.14% |
+| roadpoles_v1 (YOLO single-model) | YOLOv8n (640), conf=0.1, no TTA | 59.23% | 98.78 | 64.14% |
+
+Overall **roadpoles_v1** best score is **RF-DETR-B**; the YOLO + WBF rows are the strongest results on the **Ultralytics** pipeline before adding the second architecture.
 
 ### Full Leaderboard Submission History
 
@@ -270,10 +285,11 @@ Tested whether higher resolution alone (without a larger model) would help on th
 | 7 | YOLOv8n | 640 | 0.15 | No | 59.23% | 98.78 | 64.14% |
 | 8 | YOLOv8n | 1280 | 0.10 | No | 51.99% | 86.36 | 57.59% |
 | 9 | WBF3 (3×YOLOv8, 640) | 640 | 0.05 | No | 60.96% | — | — |
-| 10 | WBF3 + width shrink \(\alpha\)=0.914 | 640 | 0.05 | No | **64.45%** | 98.74 | 69.31% |
+| 10 | WBF3 + width shrink $\alpha$=0.914 | 640 | 0.05 | No | **64.45%** | 98.74 | 69.31% |
 | 11 | WBF3 + shrink 0.91 + WBF `skip_box_thr`=0.12 | 640 | 0.05 | No | **64.58%** | 96.79 | 69.31% |
 | 12 | WBF9 multiscale (`v1_wbf9_ms_sw910_sk13_wi50.zip`) | 576/640/704 | 0.05 | No | 67.03% | 99.09 | 71.72% |
 | 13 | WBF9 multiscale (`v1_wbf9_ms_sw904_sk14_wi52.zip`) | 576/640/704 | 0.05 | No | **67.44%** | 99.16 | — |
+| 14 | RF-DETR-B (`submission_v1test4_rfdetr.zip`) | — | — | No | **72.64%** | 99.28 | 76.9% |
 
 ### Sustainability
 
@@ -290,7 +306,7 @@ Tested whether higher resolution alone (without a larger model) would help on th
 - [x] Project setup (structure, configs, scripts)
 - [x] Dataset downloaded and configured
 - [x] EDA notebook created (`notebooks/01_eda.ipynb`)
-- [ ] EDA notebook executed and analyzed
+- [x] EDA notebook executed and analyzed
 - [x] YOLOv8n trained on Road_poles_iPhone (100 epochs)
 - [x] YOLOv8n trained on roadpoles_v1 (100 epochs)
 - [x] Evaluation on validation sets
@@ -302,6 +318,7 @@ Tested whether higher resolution alone (without a larger model) would help on th
 - [x] Inference tuning: confidence threshold + TTA (iPhone: 79.17%, v1: 59.23%)
 - [x] roadpoles_v1: 3-model WBF + width shrink + WBF skip — **64.58%** (`v1_wbf3_s91_skip12.zip`; WBF3-only shrink sweep **64.45%** with `v1_wbf3_sw914.zip`)
 - [x] roadpoles_v1: multiscale WBF9 + tuned shrink/skip/WBF IoU — **67.44%** (`v1_wbf9_ms_sw904_sk14_wi52.zip`; prior **67.03%** with `v1_wbf9_ms_sw910_sk13_wi50.zip`)
+- [x] roadpoles_v1: **RF-DETR-B** (second architecture) — **72.64%** leaderboard (`submissions/submission_v1test4_rfdetr.zip`); code and docs in `src/rfdetr/` (`README.md`, `requirements.txt`)
 - [x] YOLOv8n (1280) trained on roadpoles_v1 (200 epochs) — overfit, 51.99%
 - [ ] Error analysis / failure cases
 - [ ] Video presentation (12–14 min)
@@ -327,15 +344,20 @@ Tested whether higher resolution alone (without a larger model) would help on th
 │   ├── train.py                 # Training script
 │   ├── evaluate.py              # Evaluation (Precision, Recall, mAP)
 │   ├── predict.py               # Inference / predictions
-│   └── ensemble_wbf_v1.py       # 3-model WBF + shrink / WBF hyperparam sweeps (v1 test)
-├── runs/                        # Training outputs (gitignored)
-│   └── detect/runs/
-│       ├── train/snow_poles2/   # iPhone model + results
-│       ├── train/snow_poles_v1/ # v1 model + results
-│       └── predict/             # Test set predictions
-├── requirements.txt
+│   ├── ensemble_wbf_v1.py       # 3-model WBF + shrink / WBF hyperparam sweeps (v1 test)
+│   └── rfdetr/                  # RF-DETR-B: scripts, README.md, requirements.txt
+├── runs/                        # Training outputs (gitignored; paths depend on --project / --name)
+│   ├── train/                   # default from `src/train.py`: --project runs/train
+│   └── predict/                 # default from `src/predict.py`: --project runs/predict
+├── requirements.txt           # Ultralytics / YOLO stack (default project env)
 └── README.md
 ```
+
+## RF-DETR-B (second architecture)
+
+**[→ RF-DETR documentation](src/rfdetr/README.md)**
+
+The archived **`submissions/submission_v1test4_rfdetr.zip`** documents the **72.64%** v1 leaderboard submission.
 
 ## Setup
 
@@ -343,6 +365,9 @@ Tested whether higher resolution alone (without a larger model) would help on th
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+# For RF-DETR-B only (separate env recommended if versions conflict):
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+# pip install -r src/rfdetr/requirements.txt
 ```
 
 ## Usage
@@ -352,6 +377,10 @@ pip install -r requirements.txt
 ```bash
 jupyter notebook notebooks/01_eda.ipynb
 ```
+
+Run all cells with **`data/Poles2025/`** present. A **written interpretation** of the EDA outputs (inventory, box statistics, resolutions, MSJ, and implications for mAP@50:95 / WBF / domain gap) lives at the **end of the notebook** in the markdown section **“EDA summary — interpretation”** in [`notebooks/01_eda.ipynb`](notebooks/01_eda.ipynb). Re-run the code cells first if your data or paths change, then adjust that summary if numbers differ.
+
+*EDA confirms single-class detection with ~1.2 objects per labeled image. roadpoles_v1 has much smaller normalized width and larger height than Road_poles_iPhone, so evaluation emphasizes precise box alignment—consistent with mAP@50:95 and horizontal shrink after fusion. Fixed resolutions differ between datasets (1080×1920 vs 1920×1208), supporting a domain-gap narrative between tracks. MSJ adds unlabeled road/snow imagery for optional semi-supervised or qualitative work.*
 
 ### 2. Train
 
@@ -366,14 +395,16 @@ python src/train.py --config configs/roadpoles_v1.yaml --model yolov8n.pt --epoc
 ### 3. Evaluate
 
 ```bash
-python src/evaluate.py --model runs/detect/runs/train/snow_poles2/weights/best.pt \
+python src/evaluate.py --model runs/train/snow_poles/weights/best.pt \
                        --config configs/road_poles_iphone.yaml
 ```
+
+Use the same `runs/train/<run_name>/weights/best.pt` path as in your training command (`--name` sets `<run_name>`; defaults are `--project runs/train` and `--name snow_poles`).
 
 ### 4. Predict on Test Set (for leaderboard)
 
 ```bash
-python src/predict.py --model runs/detect/runs/train/snow_poles2/weights/best.pt \
+python src/predict.py --model runs/train/snow_poles/weights/best.pt \
                       --source data/Poles2025/Road_poles_iPhone/images/Test/test \
                       --save-txt --save-conf --name iphone_test
 ```
@@ -381,8 +412,8 @@ python src/predict.py --model runs/detect/runs/train/snow_poles2/weights/best.pt
 ## Hardware
 
 - **GPU**: NVIDIA GeForce RTX 3070 Ti Laptop GPU (7820 MiB)
-- **Framework**: PyTorch 2.11.0 + CUDA 13.0
-- **Model library**: Ultralytics 8.4.33
+- **Framework**: PyTorch **2.x** + CUDA build matching your driver (see `requirements.txt`; run `python -c "import torch; print(torch.__version__, torch.version.cuda)"` in your venv)
+- **Model library**: Ultralytics **8.4.x** (project pins `ultralytics>=8.3.0`; exact sub-version depends on the install)
 
 ## Metric Definitions
 

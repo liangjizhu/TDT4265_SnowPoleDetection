@@ -1,0 +1,25 @@
+# RF-DETR-B stack (separate from Ultralytics YOLO in repo root requirements.txt).
+# Install PyTorch with a CUDA build that matches your driver, then this file.
+#
+# From repository root:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   pip install -r src/rfdetr/requirements.txt
+#
+# Or with uv (from repo root):
+#   uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+#   uv pip install -r src/rfdetr/requirements.txt
+
+# Core: RF-DETR (pulls supervision, transformers, timm, etc.)
+rfdetr[train]>=1.3.0
+
+# PyTorch: install from the official CUDA wheel index first (see above).
+# Versions below are a loose floor if you resolve without that index.
+torch>=2.2.0
+torchvision>=0.14.0
+
+# Used by conversion / workflow scripts
+Pillow>=9.0.0
+opencv-python>=4.8.0
+numpy>=1.24.0
+supervision>=0.18.0
+tensorboard>=2.13.0

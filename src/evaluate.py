@@ -4,7 +4,7 @@ on the validation (or test) split.
 
 Usage:
     python src/evaluate.py --model runs/train/snow_poles/weights/best.pt \
-                           --config configs/poles2025.yaml --split val
+                           --config configs/road_poles_iphone.yaml --split val
 """
 
 import argparse

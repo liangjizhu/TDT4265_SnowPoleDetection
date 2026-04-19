@@ -2,8 +2,8 @@
 Training script for Snow Pole Detection using Ultralytics YOLO.
 
 Usage:
-    python src/train.py --config configs/poles2025.yaml --model yolov8n.pt --epochs 100
-    python src/train.py --config configs/poles2025.yaml --model yolo11n.pt --epochs 100
+    python src/train.py --config configs/road_poles_iphone.yaml --model yolov8n.pt --epochs 100
+    python src/train.py --config configs/roadpoles_v1.yaml --model yolov8n.pt --epochs 100 --name snow_poles_v1
 """
 
 import argparse
