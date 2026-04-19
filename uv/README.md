@@ -1,98 +1,234 @@
-# RF-DETR-B 路杆检测训练环境
+# RF-DETR-B Snow Pole Detection
 
-使用 **RF-DETR-B**（Roboflow，2025）在 `roadpoles_v1` 数据集上训练路杆（pole）目标检测模型，目标 mAP@0.5:0.95 ≥ 0.70。
+Training **RF-DETR-B** (Roboflow, 2025) on the `roadpoles_v1` dataset for road/snow pole object detection, targeting mAP@0.5:0.95 ≥ 0.70.
 
 ---
 
-## 环境要求
+## Requirements
 
-| 项目 | 要求 |
-|------|------|
+| Item | Requirement |
+|------|-------------|
 | Python | 3.9 |
-| CUDA | 12.1（驱动 ≥ 525） |
-| GPU | RTX 3050 4GB（或更高） |
-| uv | 已安装 |
+| CUDA | 12.1 (driver ≥ 525) |
+| GPU | RTX 3050 4GB or higher |
+| uv | installed |
 
 ---
 
-## 一、安装依赖
+## 1. Install Dependencies
 
-> 首次使用，在 `uv/` 目录下执行：
+> Run once inside the `uv/` directory:
 
 ```powershell
-# 1. 进入 uv 目录
-cd e:\Desktop\Detection\uv
+cd uv
 
-# 2. 安装 PyTorch（CUDA 12.1）
+# Install PyTorch (CUDA 12.1)
 uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
 
-# 3. 安装 rfdetr 训练依赖
+# Install rfdetr with training extras
 uv pip install "rfdetr[train]"
 ```
 
 ---
 
-## 二、合并数据集
+## 2. Merge Datasets
 
-将 iPhone 数据集的 30%（约 283 张）随机合并进 `roadpoles_v1/train/`：
+Randomly merge 30% of the iPhone dataset (~283 images) into `roadpoles_v1/train/`:
 
 ```powershell
-cd e:\Desktop\Detection\uv
+cd uv
 .venv\Scripts\activate
 python merge_dataset.py
 ```
 
-执行后训练集从 322 张扩充至约 605 张。
+This expands the training set from 322 to ~605 images.
 
 ---
 
-## 三、开始训练
+## 3. Convert YOLO to COCO Format
 
 ```powershell
-cd e:\Desktop\Detection\uv
-.venv\Scripts\activate
+python yolo_to_coco.py
+```
+
+---
+
+## 4. Train
+
+```powershell
 python train.py
 ```
 
-训练配置：
+Training configuration:
 
-| 参数 | 值 | 说明 |
-|------|----|------|
-| 模型 | RF-DETR-B | DINOv2 backbone |
-| 类别数 | 1 | pole |
-| 输入分辨率 | 640×640 | 4GB 显存下稳定 |
-| Batch Size | 4 | 梯度累积 4 步 = 等效 16 |
-| 学习率 | 1e-4 | AdamW |
-| 训练轮数 | 100 epochs | |
-| 预训练权重 | COCO（自动下载） | |
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Model | RF-DETR-B | DINOv2 backbone |
+| Classes | 1 | pole |
+| Input resolution | 560×560 | Stable on 4GB VRAM |
+| Batch size | 2 | Gradient accumulation ×8 = effective 16 |
+| Learning rate | 1e-4 | AdamW |
+| Epochs | 100 (with early stopping) | |
+| Pretrained weights | COCO (auto-download) | |
 
-训练结果保存在 `uv/runs/` 目录下。
+Results are saved to `uv/runs/`.
 
 ---
 
-## 四、数据集结构
+## 5. Dataset Structure
 
-RF-DETR 自动识别 YOLO 格式，`roadpoles_v1/` 目录结构如下：
+RF-DETR reads YOLO format directly. The `roadpoles_v1/` layout:
 
 ```
 roadpoles_v1/
 ├── data.yaml          ← nc: 1, names: ['pole']
 ├── train/
-│   ├── images/        ← V1 原始图片 + iphone_*.jpg（合并后）
-│   └── labels/        ← YOLO 格式标注（.txt）
+│   ├── images/        ← V1 images + iphone_*.jpg (after merge)
+│   └── labels/        ← YOLO .txt annotations
 ├── valid/
-│   ├── images/        ← 仅 V1 验证集（92 张）
+│   ├── images/        ← V1 validation set (92 images)
 │   └── labels/
 └── test/
-    ├── images/        ← 仅 V1 测试集（46 张）
+    ├── images/        ← V1 test set (46 images)
     └── labels/
 ```
 
 ---
 
-## 五、提升 mAP 的关键策略
+## 6. Training Results
 
-1. **数据多样性**：合并 iPhone 数据引入不同设备/场景
-2. **DINOv2 预训练**：RF-DETR-B 使用强大的自监督视觉特征
-3. **梯度累积**：4GB 显存下等效大 batch 训练
-4. **无 Anchor 设计**：自动适应路杆细长宽高比，无需手动调参
+### 6.1 `runs` — roadpoles_v1 (V1 dataset only)
+
+Training data: `roadpoles_v1` (322 training images)  
+Best checkpoint: `uv/runs/checkpoint_best_ema.pth`
+
+#### Final Validation Metrics (Best EMA Checkpoint)
+
+| Metric | Value |
+|--------|-------|
+| **mAP@0.5** | **0.9670** |
+| **mAP@0.5:0.95** | **0.6356** |
+| Precision | 0.9725 |
+| Recall | 0.9300 |
+
+#### Training Curve — Key Epochs (EMA mAP@0.5:0.95 on validation set)
+
+| Epoch | Train Loss | EMA mAP@0.5:0.95 | EMA mAP@0.5 | EMA Precision | EMA Recall |
+|-------|-----------|-------------------|-------------|---------------|------------|
+| 0     | 5.4943    | 0.3113            | 0.7829      | 0.8687        | 0.76       |
+| 5     | 4.7173    | 0.5324            | 0.8873      | 0.9500        | 0.84       |
+| 10    | 4.4386    | 0.5803            | 0.9363      | 0.9450        | 0.91       |
+| 15    | 4.5667    | 0.5858            | 0.9286      | 0.9450        | 0.91       |
+| 20    | 4.1094    | 0.6078            | 0.9416      | 0.9298        | 0.93       |
+| 25    | 3.6630    | 0.6229            | 0.9661      | 0.9643        | 0.95       |
+| 30    | 3.5519    | 0.6321            | 0.9699      | 0.9322        | 0.97       |
+| **34** | **3.4228** | **0.6453**     | **0.9667**  | **0.9558**    | **0.95**   |
+| 40    | 3.6075    | 0.6265            | 0.9700      | 0.9316        | 0.96       |
+| 49    | 2.9938    | 0.6283            | 0.9702      | 0.9474        | 0.95       |
+
+> **Best EMA mAP@0.5:0.95 = 0.6453** (Epoch 34)  
+> Final `results.json` on validation: mAP@0.5 = **0.9670**, mAP@0.5:0.95 = **0.6357**
+
+---
+
+### 6.2 `runs_iphone` — roadpoles_v1 + iPhone Dataset
+
+Training data: `roadpoles_v1` + 30% of iPhone dataset (~605 training images)  
+Best checkpoint: `uv/runs_iphone/checkpoint_best_ema.pth`
+
+#### Final Validation Metrics (Best EMA Checkpoint)
+
+| Metric | Value |
+|--------|-------|
+| **mAP@0.5** | **0.9970** |
+| **mAP@0.5:0.95** | **0.8423** |
+| Precision | 0.9820 |
+| Recall | 0.9900 |
+
+#### Training Curve — Key Epochs (EMA mAP@0.5:0.95 on validation set)
+
+| Epoch | Train Loss | EMA mAP@0.5:0.95 | EMA mAP@0.5 | EMA Precision | EMA Recall |
+|-------|-----------|-------------------|-------------|---------------|------------|
+| 0     | 4.0261    | 0.6917            | 0.9841      | 0.9782        | 0.95       |
+| 5     | 3.3571    | 0.7856            | 0.9960      | 0.9789        | 0.98       |
+| 10    | 3.1672    | 0.8087            | 0.9974      | 0.9789        | 0.98       |
+| 15    | 3.1132    | 0.8137            | 0.9971      | 0.9761        | 0.99       |
+| 20    | 2.9922    | 0.8148            | 0.9966      | 0.9878        | 0.98       |
+| 25    | 3.1080    | 0.8220            | 0.9961      | 0.9732        | 0.99       |
+| 28    | 2.8734    | 0.8261            | 0.9962      | 0.9762        | 0.99       |
+| 37    | 2.6956    | 0.8303            | 0.9974      | 0.9820        | 0.99       |
+| 39    | 2.5601    | 0.8339            | 0.9973      | 0.9791        | 0.99       |
+| 49    | 2.4881    | 0.8343            | 0.9970      | 0.9820        | 0.99       |
+| 53    | 2.5288    | 0.8368            | 0.9969      | 0.9790        | 0.99       |
+| 54    | 2.2641    | 0.8384            | 0.9972      | 0.9791        | 0.99       |
+| **62** | **2.4879** | **0.8397**     | **0.9974**  | **0.9820**    | **0.99**   |
+
+> **Best EMA mAP@0.5:0.95 = 0.8397** (Epoch 62)  
+> Final `results.json` on validation: mAP@0.5 = **0.9970**, mAP@0.5:0.95 = **0.8423**
+
+---
+
+### 6.3 Comparison
+
+| Metric | `runs` (V1 only) | `runs_iphone` (V1 + iPhone) | Gain |
+|--------|-----------------|------------------------------|------|
+| Training set size | 322 images | ~605 images | +88% |
+| Best EMA mAP@0.5:0.95 | 0.6453 | **0.8397** | **+19.4pp** |
+| Final mAP@0.5 | 0.9670 | **0.9970** | +3.0pp |
+| Final mAP@0.5:0.95 | 0.6357 | **0.8423** | **+20.7pp** |
+| Final Precision | 0.9725 | **0.9820** | +0.95pp |
+| Final Recall | 0.9300 | **0.9900** | +6.0pp |
+
+> ✅ **Conclusion**: Merging the iPhone dataset boosted mAP@0.5:0.95 from 0.6357 to **0.8423**, exceeding the 0.70 target by a margin of **+20.7pp**.
+
+---
+
+## 7. Key Factors for Improvement
+
+1. **Data diversity**: iPhone images introduce different devices and scenes
+2. **DINOv2 pretraining**: RF-DETR-B leverages strong self-supervised visual features
+3. **Gradient accumulation**: Effective large-batch training on 4GB VRAM
+4. **Anchor-free design**: Automatically adapts to the tall, narrow aspect ratio of poles
+5. **EMA weights**: Exponential moving average weights are more stable on validation
+
+---
+
+## 8. Inference
+
+```powershell
+# Run inference on the v1 test set
+python predict_v1test.py
+
+# Run inference on video
+python predict_video.py
+```
+
+Predictions are saved to `uv/predictions_v1test/` and `uv/predictions_video/`.
+
+---
+
+## 9. Submission Files
+
+| File | Description |
+|------|-------------|
+| `submission.zip` | Baseline predictions |
+| `submission_v1test.zip` | V1 test set predictions |
+| `submission_iphone.zip` | iPhone dataset predictions |
+| `submission_conf005.zip` | Predictions with conf=0.05 threshold |
+
+---
+
+## 10. Workflow Script
+
+Use `rf_detr_workflow.py` to run the full pipeline in one command:
+
+```powershell
+# Run all steps: convert → train → predict → evaluate
+python rf_detr_workflow.py
+
+# Or run individual steps
+python rf_detr_workflow.py --step convert   # YOLO→COCO conversion only
+python rf_detr_workflow.py --step train     # Training only
+python rf_detr_workflow.py --step predict   # Inference only
+python rf_detr_workflow.py --step eval      # Evaluation only
+```
