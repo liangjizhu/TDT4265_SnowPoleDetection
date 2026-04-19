@@ -1,0 +1,14 @@
+# Full combined dataset: iPhone (942) + v1 train (322) + MSJ pseudo (952) = 2216 train pairs; val = v1 val (92).
+# Validation must stay on roadpoles_v1 val (see data/combined layout). MSJ has no GT: generate labels with:
+#   python src/pseudo_label_msj.py --teacher <best.pt> --conf 0.4 --labels-out data/pseudo_msj_labels --manifest data/msj_pseudo_manifest.csv
+#   python src/link_msj_pseudo_into_dataset.py
+# Then add iPhone + v1 train pairs into the same images/train + labels/train; val = v1 val.
+
+path: /home/liangjizhu/Desktop/4-2Cuatri/DeepLearning/TDT4265_SnowPoleDetection/data/combined_full
+train: images/train
+val: images/val
+test: images/test_v1
+
+nc: 1
+names:
+  0: snow_pole

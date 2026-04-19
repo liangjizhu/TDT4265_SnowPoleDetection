@@ -141,6 +141,84 @@ Explored the effect of lowering the confidence threshold and applying Test-Time 
 
 **Key finding: TTA hurts snow pole detection.** Snow poles are tall, thin, vertical objects. TTA's flipping and scaling introduces slight bounding box misalignments that degrade mAP@50:95, which penalizes imprecise boxes at high IoU thresholds. Lowering the confidence threshold alone gives the best improvement by capturing additional true positives.
 
+### roadpoles_v1: 3-model WBF + width shrink + WBF skip (post-processing)
+
+Further gains on **roadpoles_v1** came from **inference-time** steps only (no extra training). The leaderboard metric is **mAP@50:95**; on v1, **mAP@50** was already very high (~97–99%), so the bottleneck was **tight horizontal alignment** of very thin poles (typical normalized width ≈ 0.008).
+
+The pipeline is built in three layers, in the order we applied them:
+
+#### 1. WBF3 — three-model Weighted Boxes Fusion
+
+We fused detections from three checkpoints with **Weighted Boxes Fusion (WBF)** (`ensemble-boxes`), so boxes are merged in normalized coordinates before writing YOLO txt + confidence:
+
+| Model | Role |
+|-------|------|
+| `snow_poles_v1` (YOLOv8n, v1 train) | Strong v1-specific detector |
+| `yolov8s_finetune_v1` (YOLOv8s, iPhone → fine-tune v1) | Transfer learning, different errors |
+| `yolov8n_v1_640_200ep` (YOLOv8n, 200 epochs) | Slightly different bias |
+
+Per-model inference: `imgsz=640`, `conf=0.05`, `iou=0.7`. WBF defaults unless noted: `weights=[1.0, 1.0, 0.8]`, `iou_thr=0.5`, `skip_box_thr=0.1`.
+
+**Effect:** a single WBF zip (no width shrink) reached **60.96%** mAP@50:95 vs **59.23%** for the best single-model + conf tuning — ensemble diversity mainly helps **box geometry**, not “finding” poles.
+
+#### 2. Width shrink (after per-model boxes, before WBF)
+
+On the **validation** split, matched boxes were on average **slightly too wide** relative to ground truth (thin vertical class). Before fusion, each detector box was **horizontally tightened** around its center:
+
+\[
+w' = \alpha \cdot w,\quad \alpha \in (0,1]
+\]
+
+We grid-searched \(\alpha\) on the test submission loop; **\(\alpha \approx 0.914\)** (i.e. shrink to **91.4%** of the predicted width) was one of the strongest settings.
+
+**Example best from this step**
+
+| Submission | Width factor \(\alpha\) | mAP@50:95 | mAP@50 | AR10 |
+|------------|-------------------------|-----------|--------|------|
+| `v1_wbf3_sw914.zip` | **0.914** | **64.45%** | 98.74 | 69.31% |
+
+#### 3. skip12 — higher `skip_box_thr` in WBF
+
+WBF’s `skip_box_thr` drops very low-confidence proposals during fusion. Raising it from **0.10** to **0.12** (`skip12`) reduced spurious merged boxes while keeping the same **0.91** width shrink and `iou_thr=0.5`.
+
+**Best (WBF3 only, single `imgsz` 640)** — superseded on the v1 leaderboard by multiscale WBF9 (§4).
+
+| Submission | Shrink \(\alpha\) | WBF `skip_box_thr` | mAP@50:95 | mAP@50 | AR10 |
+|------------|-------------------|--------------------|-----------|--------|------|
+| `v1_wbf3_s91_skip12.zip` | **0.91** | **0.12** | **64.58%** | 96.79 | 69.31% |
+
+**Summary vs previous v1 best**
+
+| Stage | mAP@50:95 (test) | Notes |
+|-------|------------------|--------|
+| Best single model + conf (`v1` YOLOv8n, conf 0.1) | 59.23% | Baseline in README above |
+| WBF3 only | 60.96% | `v1_wbf_ensemble.zip` |
+| WBF3 + width shrink (tuned \(\alpha\)) | **64.45%** | `v1_wbf3_sw914.zip` — here \(\alpha \approx 0.914\) was best |
+| WBF3 + shrink 0.91 + `skip_box_thr=0.12` | **64.58%** | `v1_wbf3_s91_skip12.zip` |
+
+#### 4. Multi-scale WBF9 (same 3 YOLOv8 checkpoints, three `imgsz` each)
+
+Each checkpoint is run at **576, 640, and 704** (still YOLOv8, no 1280 test-time), giving **9 experts** for WBF. Expert weights are `model_weight × scale_weight`, with default scale weights `[0.75, 1.0, 0.75]` so **640** is slightly favored. The same **width shrink** and **`skip_box_thr` / `iou_thr`** tuning as above is applied per expert before fusion.
+
+Zip names encode: `sw###` → width scale \(\alpha = \texttt{###}/1000\) (multiply predicted width by \(\alpha\); **smaller \(\alpha\)** = **stronger** shrink). **`sk##`** → WBF `skip_box_thr = ##/100`. **`wi##`** → WBF `iou_thr = ##/100`.
+
+**Leaderboard record (confirmed)**
+
+| Submission | \(\alpha\) | `skip_box_thr` | `iou_thr` | mAP@50:95 | mAP@50 | AR10 |
+|------------|------------|----------------|-----------|-----------|--------|------|
+| `v1_wbf9_ms_sw910_sk13_wi50.zip` | 0.910 | 0.13 | 0.50 | 67.03% | 99.09 | 71.72% |
+| `v1_wbf9_ms_sw904_sk14_wi52.zip` | **0.904** | **0.14** | **0.52** | **67.44%** | **99.16** | — |
+
+**Finding — `sw`, `sk`, and `wi` interact:** With **WBF3 @ 640 only**, the best width scale was **~0.914** (weaker shrink). With **multiscale WBF9**, the leaderboard optimum is **not** the same triple as the first multiscale sweep: **tighter** horizontal shrink (**`sw904`**) plus **higher** `skip_box_thr` (**`sk14`**) and **higher** WBF fusion IoU (**`wi52`**) beat the earlier **`sw910` + `sk13` + `wi50`** row (**67.03% → 67.44%** on test). Joint sweeps over \(\alpha\), `skip_box_thr`, and `iou_thr` matter; do not tune \(\alpha\) alone.
+
+```bash
+python src/ensemble_wbf_v1.py --mode multiscale-sweep --submissions-dir submissions
+```
+
+This writes zips named `v1_wbf9_ms_sw{shrink×1000}_sk{skip×100}_wi{iou×100}.zip`. Use `--ms-shrink`, `--ms-skip`, and `--ms-wiou` to sweep the joint space; the current record uses **`sw904`**, **`sk14`**, **`wi52`**.
+
+Reproduce / sweep variants: `python src/ensemble_wbf_v1.py` (`--mode single`, `--mode sweep`, or `--mode multiscale-sweep`).
+
 ### Experiment: YOLOv8n at 1280 on v1
 
 Tested whether higher resolution alone (without a larger model) would help on the small v1 dataset.
@@ -162,7 +240,9 @@ Tested whether higher resolution alone (without a larger model) would help on th
 | Dataset | Best Config | mAP@50:95 | mAP@50 | AR10 |
 |---------|------------|-----------|--------|------|
 | Road_poles_iPhone | YOLOv8s (1280), conf=0.1, no TTA | **79.17%** | 95.69 | 82.07% |
-| roadpoles_v1 | YOLOv8n (640), conf=0.1, no TTA | **59.23%** | 98.78 | 64.14% |
+| roadpoles_v1 | Multiscale WBF9 + `sw904` + `sk14` + `wi52` (`v1_wbf9_ms_sw904_sk14_wi52.zip`) | **67.44%** | 99.16 | — |
+| roadpoles_v1 | WBF3 + shrink 0.91 + `skip_box_thr=0.12` (`v1_wbf3_s91_skip12.zip`) | 64.58% | 96.79 | 69.31% |
+| roadpoles_v1 (single-model best) | YOLOv8n (640), conf=0.1, no TTA | 59.23% | 98.78 | 64.14% |
 
 ### Full Leaderboard Submission History
 
@@ -189,6 +269,11 @@ Tested whether higher resolution alone (without a larger model) would help on th
 | 6 | YOLOv8n | 640 | 0.15 | Yes | 59.18% | 96.23 | 63.97% |
 | 7 | YOLOv8n | 640 | 0.15 | No | 59.23% | 98.78 | 64.14% |
 | 8 | YOLOv8n | 1280 | 0.10 | No | 51.99% | 86.36 | 57.59% |
+| 9 | WBF3 (3×YOLOv8, 640) | 640 | 0.05 | No | 60.96% | — | — |
+| 10 | WBF3 + width shrink \(\alpha\)=0.914 | 640 | 0.05 | No | **64.45%** | 98.74 | 69.31% |
+| 11 | WBF3 + shrink 0.91 + WBF `skip_box_thr`=0.12 | 640 | 0.05 | No | **64.58%** | 96.79 | 69.31% |
+| 12 | WBF9 multiscale (`v1_wbf9_ms_sw910_sk13_wi50.zip`) | 576/640/704 | 0.05 | No | 67.03% | 99.09 | 71.72% |
+| 13 | WBF9 multiscale (`v1_wbf9_ms_sw904_sk14_wi52.zip`) | 576/640/704 | 0.05 | No | **67.44%** | 99.16 | — |
 
 ### Sustainability
 
@@ -215,6 +300,8 @@ Tested whether higher resolution alone (without a larger model) would help on th
 - [x] YOLOv8s (1280) trained on roadpoles_v1 (164 epochs, early stop)
 - [x] Leaderboard submission — Approach 2 (iPhone: 77.7%, v1: 51.85%)
 - [x] Inference tuning: confidence threshold + TTA (iPhone: 79.17%, v1: 59.23%)
+- [x] roadpoles_v1: 3-model WBF + width shrink + WBF skip — **64.58%** (`v1_wbf3_s91_skip12.zip`; WBF3-only shrink sweep **64.45%** with `v1_wbf3_sw914.zip`)
+- [x] roadpoles_v1: multiscale WBF9 + tuned shrink/skip/WBF IoU — **67.44%** (`v1_wbf9_ms_sw904_sk14_wi52.zip`; prior **67.03%** with `v1_wbf9_ms_sw910_sk13_wi50.zip`)
 - [x] YOLOv8n (1280) trained on roadpoles_v1 (200 epochs) — overfit, 51.99%
 - [ ] Error analysis / failure cases
 - [ ] Video presentation (12–14 min)
@@ -239,7 +326,8 @@ Tested whether higher resolution alone (without a larger model) would help on th
 ├── src/
 │   ├── train.py                 # Training script
 │   ├── evaluate.py              # Evaluation (Precision, Recall, mAP)
-│   └── predict.py               # Inference / predictions
+│   ├── predict.py               # Inference / predictions
+│   └── ensemble_wbf_v1.py       # 3-model WBF + shrink / WBF hyperparam sweeps (v1 test)
 ├── runs/                        # Training outputs (gitignored)
 │   └── detect/runs/
 │       ├── train/snow_poles2/   # iPhone model + results

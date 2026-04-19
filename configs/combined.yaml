@@ -1,0 +1,12 @@
+# Combined dataset: Road_poles_iPhone (942) + roadpoles_v1 (322) = 1264 train images
+# Validation on v1 val set (92 images). Ablation vs MSJ: train with --name ablation_iv1_no_msj, then
+#   python src/summarize_combined_ablation.py
+
+path: /home/liangjizhu/Desktop/4-2Cuatri/DeepLearning/TDT4265_SnowPoleDetection/data/combined
+train: images/train
+val: images/val
+test: images/test_v1
+
+nc: 1
+names:
+  0: snow_pole

@@ -7,7 +7,7 @@ venv/
 *.egg-info/
 
 # Dataset (do NOT redistribute)
-data/Poles2025/
+data/
 
 # Training outputs (large files)
 runs/

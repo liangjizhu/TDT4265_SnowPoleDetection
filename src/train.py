@@ -34,6 +34,15 @@ def parse_args():
                         help="Enable data augmentation")
     parser.add_argument("--resume", type=str, default=None,
                         help="Path to checkpoint to resume training from")
+    parser.add_argument("--profile", type=str, default="default",
+                        choices=["default", "anti-overfit", "finetune"],
+                        help="Training profile: 'default', 'anti-overfit', or 'finetune' for transfer learning")
+    parser.add_argument("--freeze", type=int, default=0,
+                        help="Freeze first N layers of backbone (e.g. 10)")
+    parser.add_argument("--lr0", type=float, default=None,
+                        help="Override initial learning rate")
+    parser.add_argument("--box", type=float, default=None,
+                        help="Override box loss weight (default 7.5)")
     return parser.parse_args()
 
 
@@ -45,6 +54,68 @@ def main():
         results = model.train(resume=True)
     else:
         model = YOLO(args.model)
+
+        if args.profile == "anti-overfit":
+            train_kwargs = dict(
+                dropout=0.15,
+                weight_decay=0.001,
+                label_smoothing=0.1,
+                lr0=0.001,
+                cos_lr=True,
+                warmup_epochs=5,
+                freeze=args.freeze if args.freeze > 0 else None,
+                hsv_h=0.02,
+                hsv_s=0.8,
+                hsv_v=0.5,
+                degrees=10.0,
+                translate=0.2,
+                scale=0.7,
+                flipud=0.1,
+                fliplr=0.5,
+                mosaic=1.0,
+                mixup=0.3,
+                erasing=0.2,
+                close_mosaic=20,
+            )
+        elif args.profile == "finetune":
+            train_kwargs = dict(
+                lr0=0.0005,
+                lrf=0.01,
+                cos_lr=True,
+                warmup_epochs=3,
+                freeze=args.freeze if args.freeze > 0 else None,
+                hsv_h=0.015,
+                hsv_s=0.7,
+                hsv_v=0.4,
+                degrees=5.0,
+                translate=0.15,
+                scale=0.5,
+                flipud=0.0,
+                fliplr=0.5,
+                mosaic=1.0,
+                mixup=0.15,
+                close_mosaic=15,
+            )
+        else:
+            train_kwargs = dict(
+                hsv_h=0.015,
+                hsv_s=0.7,
+                hsv_v=0.4,
+                degrees=5.0,
+                translate=0.1,
+                scale=0.5,
+                flipud=0.0,
+                fliplr=0.5,
+                mosaic=1.0,
+                mixup=0.1,
+                freeze=args.freeze if args.freeze > 0 else None,
+            )
+
+        if args.lr0 is not None:
+            train_kwargs["lr0"] = args.lr0
+        if args.box is not None:
+            train_kwargs["box"] = args.box
+
         results = model.train(
             data=args.config,
             epochs=args.epochs,
@@ -58,17 +129,7 @@ def main():
             save_period=10,
             plots=True,
             verbose=True,
-            # Augmentation parameters (tunable)
-            hsv_h=0.015,
-            hsv_s=0.7,
-            hsv_v=0.4,
-            degrees=5.0,
-            translate=0.1,
-            scale=0.5,
-            flipud=0.0,
-            fliplr=0.5,
-            mosaic=1.0,
-            mixup=0.1,
+            **train_kwargs,
         )
 
     print("\nTraining complete!")
