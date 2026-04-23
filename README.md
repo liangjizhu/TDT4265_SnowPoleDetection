@@ -1,3 +1,5 @@
+English || [Español](README.es.md) || [简体中文](README.zh-CN.md)
+
 # TDT4265 Mini-Project: Snow Pole Detection
 
 Real-time object detection of snow poles for autonomous driving in winter conditions, using the **Poles2025** dataset from the Trondheim/Trondelag region.

@@ -1,3 +1,5 @@
+English || [Español](README.es.md) || [简体中文](README.zh-CN.md)
+
 # RF-DETR-B Snow Pole Detection
 
 > **Location in this repo:** `src/rfdetr/`. Datasets:  
